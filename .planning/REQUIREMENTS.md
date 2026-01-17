@@ -106,16 +106,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| AUTH-05 | Phase 1 | Pending |
-| AUTH-06 | Phase 1 | Pending |
-| AUTH-07 | Phase 1 | Pending |
-| DATA-01 | Phase 1 | Pending |
-| UI-01 | Phase 1 | Pending |
-| UI-02 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | ✅ Complete |
+| AUTH-02 | Phase 1 | ✅ Complete |
+| AUTH-03 | Phase 1 | ✅ Complete |
+| AUTH-04 | Phase 1 | ✅ Complete |
+| AUTH-05 | Phase 1 | ✅ Complete |
+| AUTH-06 | Phase 1 | ✅ Complete |
+| AUTH-07 | Phase 1 | ✅ Complete |
+| DATA-01 | Phase 1 | ✅ Complete |
+| UI-01 | Phase 1 | ✅ Complete |
+| UI-02 | Phase 1 | ✅ Complete |
 | VOICE-01 | Phase 2 | Pending |
 | VOICE-02 | Phase 2 | Pending |
 | VOICE-03 | Phase 2 | Pending |

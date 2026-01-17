@@ -20,9 +20,9 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 **Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Auth backend (SQLite, API routes, middleware)
-- [ ] 01-02-PLAN.md — Auth frontend (login, register, dashboard UIs)
-- [ ] 01-03-PLAN.md — Human verification of complete auth flow
+- [x] 01-01-PLAN.md — Auth backend (SQLite, API routes, middleware)
+- [x] 01-02-PLAN.md — Auth frontend (login, register, dashboard UIs)
+- [x] 01-03-PLAN.md — Human verification of complete auth flow
 
 **Requirements:**
 - AUTH-01: User can register with email and password
@@ -138,12 +138,12 @@ Plans:
 
 | Phase | Status | Requirements | Completion |
 |-------|--------|--------------|------------|
-| 1 - Foundation & Auth | Planned | 10/10 | 0% |
+| 1 - Foundation & Auth | ✅ Complete | 10/10 | 100% |
 | 2 - Voice Pipeline | Not Started | 9/9 | 0% |
 | 3 - AI Integration | Not Started | 10/10 | 0% |
 | 4 - Query Capabilities | Not Started | 6/6 | 0% |
 
-**Overall Progress:** 0/35 requirements complete (0%)
+**Overall Progress:** 10/35 requirements complete (29%)
 
 ---
 
