@@ -1,0 +1,144 @@
+{
+  "name": "Capstone",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are an academic assistant for college students. Answer questions about CGPA, attendance, courses, and faculty assignments based ONLY on data from MongoDB.\n\nIMPORTANT RULES:\n1. NEVER make up or guess information. Only use data retrieved from MongoDB.\n2. If data is missing, respond: \"I don't have that information in your records.\"\n3. Keep responses short and natural for voice output (1-2 sentences).\n4. Use the student's roll number to query their specific data.\n5. When querying MongoDB, use the Find_documents_in_MongoDB tool with the student's rollNumber.\n\nQuery format example: {\"query\": {\"rollNumber\": \"STUDENT_ROLL_NUMBER\"}, \"limit\": 1}\n\nFor attendance queries, look for course-specific attendance in the student document.\nFor faculty queries, query the courses collection or faculty field in student data.\nAlways be concise and accurate."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -16,
+        -192
+      ],
+      "id": "1c666069-7ddc-4795-8608-002c3d0c01ac",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        16
+      ],
+      "id": "489987c2-d486-4bc4-82b6-bfa72eff6069",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "MA9fF508qc6e4INP",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        16
+      ],
+      "id": "a2293d67-5a2f-4fed-9d4d-277407383dba",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "collection": "=student",
+        "options": {},
+        "query": "={}"
+      },
+      "type": "n8n-nodes-base.mongoDbTool",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        0
+      ],
+      "id": "7ee6ce0e-2008-45d0-bfb4-ecf18fc21e49",
+      "name": "Find documents in MongoDB",
+      "credentials": {
+        "mongoDb": {
+          "id": "YvVNXbuZ8hlkQ0U7",
+          "name": "MongoDB account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "6d1c74d5-7a85-478f-80ef-93f4a0bf7d7a",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -288,
+        -192
+      ],
+      "id": "c496058d-0d71-4159-a1a0-66ad715651d0",
+      "name": "Webhook",
+      "webhookId": "6d1c74d5-7a85-478f-80ef-93f4a0bf7d7a"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find documents in MongoDB": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1b18014d-73cf-4358-bf0c-72aa15ae0067",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3006a5d6772217f5ebf10e103499012896c18b16962721572449c979edef3060"
+  },
+  "id": "7XBFHHJ0cIkX94Hw",
+  "tags": []
+}

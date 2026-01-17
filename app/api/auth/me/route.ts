@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       user: {
-        email: payload.email,
         rollNumber: payload.rollNumber,
       },
     });
