@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [textQuery, setTextQuery] = useState('');
 
   useEffect(() => {
     // Fetch user info from token
@@ -40,7 +41,15 @@ export default function Dashboard() {
 
   const handleVoiceQuery = async () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition not supported in this browser. Please use Chrome.');
+      alert('Speech recognition not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    try {
+      // Request microphone permission first
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      alert('Microphone access denied. Please allow microphone access and try again.');
       return;
     }
 
@@ -50,6 +59,7 @@ export default function Dashboard() {
     recognition.lang = 'en-US';
     recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
@@ -97,7 +107,28 @@ export default function Dashboard() {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
       setIsProcessing(false);
-      alert('Error: ' + event.error);
+
+      let errorMessage = 'Speech recognition failed. ';
+      switch (event.error) {
+        case 'network':
+          errorMessage += 'Network error - please check your internet connection and make sure you\'re using HTTPS.';
+          break;
+        case 'not-allowed':
+          errorMessage += 'Microphone access was denied. Please allow microphone access in your browser settings.';
+          break;
+        case 'no-speech':
+          errorMessage += 'No speech detected. Please try again and speak clearly.';
+          break;
+        case 'aborted':
+          errorMessage += 'Speech recognition was aborted.';
+          break;
+        case 'audio-capture':
+          errorMessage += 'No microphone found. Please connect a microphone and try again.';
+          break;
+        default:
+          errorMessage += event.error;
+      }
+      alert(errorMessage);
     };
 
     recognition.onend = () => {
@@ -105,6 +136,44 @@ export default function Dashboard() {
     };
 
     recognition.start();
+  };
+
+  const handleTextQuery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textQuery.trim()) return;
+
+    setTranscript(textQuery);
+    setIsProcessing(true);
+    setAiResponse('');
+
+    try {
+      const response = await fetch('/api/voice/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query: textQuery }),
+      });
+
+      const data = await response.json();
+
+      if (data.response) {
+        setAiResponse(data.response);
+
+        // Speak the response
+        const utterance = new SpeechSynthesisUtterance(data.response);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setAiResponse('Sorry, I could not process your request.');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setAiResponse('An error occurred while processing your request.');
+    } finally {
+      setIsProcessing(false);
+      setTextQuery('');
+    }
   };
 
   if (loading) {
@@ -195,8 +264,41 @@ export default function Dashboard() {
             </div>
           )}
 
-          <p style={{ fontSize: '0.85rem', opacity: 0.5, marginTop: '2rem' }}>
-            Click the microphone and ask about your CGPA, attendance, or courses
+          <div style={{ marginTop: '2rem', borderTop: '1px solid #333', paddingTop: '1.5rem' }}>
+            <p style={{ fontSize: '0.9rem', marginBottom: '1rem', opacity: 0.7 }}>Or type your question:</p>
+            <form onSubmit={handleTextQuery} style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                value={textQuery}
+                onChange={(e) => setTextQuery(e.target.value)}
+                placeholder="What is my CGPA?"
+                disabled={isProcessing}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  backgroundColor: '#000',
+                  border: '1px solid #fff',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '1rem',
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isProcessing || !textQuery.trim()}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  cursor: isProcessing || !textQuery.trim() ? 'not-allowed' : 'pointer',
+                  opacity: isProcessing || !textQuery.trim() ? 0.5 : 1,
+                }}
+              >
+                Send
+              </button>
+            </form>
+          </div>
+
+          <p style={{ fontSize: '0.85rem', opacity: 0.5, marginTop: '1.5rem' }}>
+            Ask about your CGPA, attendance, or courses
           </p>
         </div>
       </div>
