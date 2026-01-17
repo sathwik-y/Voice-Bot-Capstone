@@ -20,7 +20,7 @@
       "parameters": {
         "operation": "find",
         "collection": "student",
-        "query": "={{ { \"rollNumber\": $json.body.rollNumber } }}",
+        "query": "={{ { \"rollNumber\": $json.rollNumber } }}",
         "limit": 1
       },
       "type": "n8n-nodes-base.mongoDb",
@@ -63,7 +63,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ \"You are an academic assistant. Answer this student's question based ONLY on their data below.\\n\\nStudent Data:\\n\" + JSON.stringify($json, null, 2) + \"\\n\\nStudent Question: \" + $('Webhook').item.json.body.query + \"\\n\\nRULES:\\n1. Answer in 1-2 short sentences suitable for voice output.\\n2. NEVER make up information. Only use the data provided above.\\n3. If data is missing, say 'I don't have that information in your records.'\\n4. Be specific and accurate.\\n5. Don't mention JSON or technical terms in your response.\" }}",
+        "text": "={{ \"You are an academic assistant. Answer this student's question based ONLY on their data below.\\n\\nStudent Data:\\n\" + JSON.stringify($json, null, 2) + \"\\n\\nStudent Question: \" + $('Webhook').item.json.query + \"\\n\\nRULES:\\n1. Answer in 1-2 short sentences suitable for voice output.\\n2. NEVER make up information. Only use the data provided above.\\n3. If data is missing, say 'I don't have that information in your records.'\\n4. Be specific and accurate.\\n5. Don't mention JSON or technical terms in your response.\" }}",
         "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
@@ -78,7 +78,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"output\": $json.text, \"query\": $('Webhook').item.json.body.query, \"rollNumber\": $('Webhook').item.json.body.rollNumber } }}"
+        "responseBody": "={{ { \"output\": $json.text, \"query\": $('Webhook').item.json.query, \"rollNumber\": $('Webhook').item.json.rollNumber } }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,

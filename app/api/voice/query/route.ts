@@ -27,6 +27,15 @@ export async function POST(request: NextRequest) {
     // Forward to n8n webhook with user context
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/capstone-voice';
 
+    console.log('Sending to n8n:', n8nWebhookUrl, {
+      query,
+      rollNumber: payload.rollNumber,
+      userId: payload.userId,
+    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
     const n8nResponse = await fetch(n8nWebhookUrl, {
       method: 'POST',
       headers: {
@@ -37,13 +46,21 @@ export async function POST(request: NextRequest) {
         rollNumber: payload.rollNumber,
         userId: payload.userId,
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
+    console.log('n8n response status:', n8nResponse.status);
+
     if (!n8nResponse.ok) {
-      throw new Error('n8n workflow failed');
+      const errorText = await n8nResponse.text();
+      console.error('n8n error response:', errorText);
+      throw new Error(`n8n workflow failed: ${n8nResponse.status} - ${errorText}`);
     }
 
     const aiData = await n8nResponse.json();
+    console.log('n8n response data:', aiData);
 
     // Extract response from n8n output
     // n8n AI Agent typically returns { output: "response text" }
@@ -65,10 +82,18 @@ export async function POST(request: NextRequest) {
       query: query,
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Voice query error:', error);
+
+    if (error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Request timed out - n8n took too long to respond' },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Failed to process voice query' },
+      { error: 'Failed to process voice query: ' + (error.message || 'Unknown error') },
       { status: 500 }
     );
   }
