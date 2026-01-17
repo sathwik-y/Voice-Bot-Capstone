@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward to n8n webhook with user context
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/6d1c74d5-7a85-478f-80ef-93f4a0bf7d7a';
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/capstone-voice';
 
     const n8nResponse = await fetch(n8nWebhookUrl, {
       method: 'POST',
