@@ -17,6 +17,13 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 
 **Dependencies:** None (foundation phase)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Auth backend (SQLite, API routes, middleware)
+- [ ] 01-02-PLAN.md — Auth frontend (login, register, dashboard UIs)
+- [ ] 01-03-PLAN.md — Human verification of complete auth flow
+
 **Requirements:**
 - AUTH-01: User can register with email and password
 - AUTH-02: User passwords are securely hashed using bcrypt
@@ -43,6 +50,11 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 
 **Dependencies:** Phase 1 (requires authenticated dashboard)
 
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (created by /gsd:plan-phase)
+
 **Requirements:**
 - VOICE-01: User can record audio in browser (3-6 second clips)
 - VOICE-02: Recorded audio is sent to speech-to-text service (Whisper)
@@ -67,6 +79,11 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 **Goal:** System retrieves academic data and generates accurate responses using AI orchestration.
 
 **Dependencies:** Phase 2 (requires voice pipeline)
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (created by /gsd:plan-phase)
 
 **Requirements:**
 - AI-01: Next.js backend forwards queries to n8n webhook
@@ -95,6 +112,11 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 
 **Dependencies:** Phase 3 (requires AI orchestration)
 
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (created by /gsd:plan-phase)
+
 **Requirements:**
 - QUERY-01: User can ask for their CGPA and receive correct value
 - QUERY-02: User can ask for attendance in a specific course
@@ -116,7 +138,7 @@ This roadmap delivers a voice-based academic assistant through 4 focused phases.
 
 | Phase | Status | Requirements | Completion |
 |-------|--------|--------------|------------|
-| 1 - Foundation & Auth | Not Started | 10/10 | 0% |
+| 1 - Foundation & Auth | Planned | 10/10 | 0% |
 | 2 - Voice Pipeline | Not Started | 9/9 | 0% |
 | 3 - AI Integration | Not Started | 10/10 | 0% |
 | 4 - Query Capabilities | Not Started | 6/6 | 0% |
