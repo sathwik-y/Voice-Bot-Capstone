@@ -106,13 +106,53 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (To be populated by roadmapper) | | |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| AUTH-07 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| UI-01 | Phase 1 | Pending |
+| UI-02 | Phase 1 | Pending |
+| VOICE-01 | Phase 2 | Pending |
+| VOICE-02 | Phase 2 | Pending |
+| VOICE-03 | Phase 2 | Pending |
+| VOICE-04 | Phase 2 | Pending |
+| VOICE-05 | Phase 2 | Pending |
+| VOICE-06 | Phase 2 | Pending |
+| UI-03 | Phase 2 | Pending |
+| UI-04 | Phase 2 | Pending |
+| UI-06 | Phase 2 | Pending |
+| AI-01 | Phase 3 | Pending |
+| AI-02 | Phase 3 | Pending |
+| AI-03 | Phase 3 | Pending |
+| AI-04 | Phase 3 | Pending |
+| AI-05 | Phase 3 | Pending |
+| AI-06 | Phase 3 | Pending |
+| DATA-02 | Phase 3 | Pending |
+| DATA-03 | Phase 3 | Pending |
+| DATA-04 | Phase 3 | Pending |
+| DATA-05 | Phase 3 | Pending |
+| QUERY-01 | Phase 4 | Pending |
+| QUERY-02 | Phase 4 | Pending |
+| QUERY-03 | Phase 4 | Pending |
+| QUERY-04 | Phase 4 | Pending |
+| QUERY-05 | Phase 4 | Pending |
+| UI-05 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 28 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 28 ⚠️
+- v1 requirements: 35 total
+- Mapped to phases: 35/35 (100%)
+- Unmapped: 0
+
+**Phase Distribution:**
+- Phase 1 (Foundation & Auth): 10 requirements
+- Phase 2 (Voice Pipeline): 9 requirements
+- Phase 3 (AI Integration): 10 requirements
+- Phase 4 (Query Capabilities): 6 requirements
 
 ---
 *Requirements defined: 2025-01-17*
-*Last updated: 2025-01-17 after initial definition*
+*Last updated: 2025-01-17 after roadmap creation*
