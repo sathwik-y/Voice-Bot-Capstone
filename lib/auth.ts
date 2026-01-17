@@ -7,7 +7,6 @@ const TOKEN_EXPIRY = '7d';
 
 export interface TokenPayload {
   userId: number;
-  email: string;
   rollNumber: string;
 }
 
@@ -50,11 +49,4 @@ export function verifyToken(token: string): TokenPayload | null {
   } catch (error) {
     return null;
   }
-}
-
-/**
- * Extract roll number from email (assumes format: rollnumber@domain.com)
- */
-export function extractRollNumber(email: string): string {
-  return email.split('@')[0];
 }

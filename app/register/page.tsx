@@ -6,7 +6,7 @@ import Link from 'next/link';
 
 export default function Register() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [rollNumber, setRollNumber] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +20,7 @@ export default function Register() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ rollNumber, password }),
       });
 
       const data = await res.json();
@@ -56,12 +56,12 @@ export default function Register() {
         gap: '1rem'
       }}>
         <input
-          type="email"
-          placeholder="Email (roll number)"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="text"
+          placeholder="Roll Number"
+          value={rollNumber}
+          onChange={(e) => setRollNumber(e.target.value)}
           required
-          autoComplete="email"
+          autoComplete="username"
         />
 
         <input

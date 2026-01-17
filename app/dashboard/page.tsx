@@ -68,7 +68,7 @@ export default function Dashboard() {
 
         {user && (
           <div style={{ marginBottom: '3rem' }}>
-            <p style={{ marginBottom: '0.5rem' }}>Email: {user.email}</p>
+            {/* <p style={{ marginBottom: '0.5rem' }}>Email: {user.email}</p> */}
             <p>Roll Number: {user.rollNumber}</p>
           </div>
         )}
