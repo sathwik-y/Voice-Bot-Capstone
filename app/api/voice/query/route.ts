@@ -34,29 +34,58 @@ export async function POST(request: NextRequest) {
     });
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-    const n8nResponse = await fetch(n8nWebhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: query,
-        rollNumber: payload.rollNumber,
-        userId: payload.userId,
-      }),
-      signal: controller.signal,
-    });
+    let n8nResponse;
+    let retries = 0;
+    const maxRetries = 2;
+
+    while (retries <= maxRetries) {
+      try {
+        n8nResponse = await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: query,
+            rollNumber: payload.rollNumber,
+            userId: payload.userId,
+          }),
+          signal: controller.signal,
+        });
+
+        console.log('n8n response status:', n8nResponse.status);
+
+        if (n8nResponse.ok) {
+          break; // Success, exit retry loop
+        }
+
+        // If 503, retry (dyno might be waking up)
+        if (n8nResponse.status === 503 && retries < maxRetries) {
+          console.log(`n8n returned 503, retrying (${retries + 1}/${maxRetries})...`);
+          retries++;
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+          continue;
+        }
+
+        // Other errors, don't retry
+        const errorText = await n8nResponse.text();
+        console.error('n8n error response:', errorText);
+        throw new Error(`n8n workflow failed: ${n8nResponse.status}`);
+
+      } catch (fetchError: any) {
+        if (fetchError.name === 'AbortError') {
+          throw fetchError; // Timeout, don't retry
+        }
+        throw fetchError;
+      }
+    }
 
     clearTimeout(timeoutId);
 
-    console.log('n8n response status:', n8nResponse.status);
-
-    if (!n8nResponse.ok) {
-      const errorText = await n8nResponse.text();
-      console.error('n8n error response:', errorText);
-      throw new Error(`n8n workflow failed: ${n8nResponse.status} - ${errorText}`);
+    if (!n8nResponse || !n8nResponse.ok) {
+      throw new Error('n8n workflow failed after retries');
     }
 
     const aiData = await n8nResponse.json();
