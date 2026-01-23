@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 let db: Database.Database | null = null;
@@ -13,7 +13,12 @@ export function getDb(): Database.Database {
   }
 
   // Create data directory if it doesn't exist
-  const dbPath = join(process.cwd(), 'data', 'auth.db');
+  const dataDir = join(process.cwd(), 'data');
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true });
+  }
+
+  const dbPath = join(dataDir, 'auth.db');
 
   // Initialize database
   db = new Database(dbPath);
@@ -42,4 +47,13 @@ export function run(sql: string, params: any[] = []): Database.RunResult {
   const database = getDb();
   const stmt = database.prepare(sql);
   return stmt.run(...params);
+}
+
+/**
+ * Execute a SELECT query and return the first result
+ */
+export function get<T = any>(sql: string, params: any[] = []): T | undefined {
+  const database = getDb();
+  const stmt = database.prepare(sql);
+  return stmt.get(...params) as T | undefined;
 }

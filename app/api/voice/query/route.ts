@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
-import { run } from '@/lib/db';
+import { run, get } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +24,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Get last conversation for context (AI-06: short-term context)
+    let lastContext = null;
+    try {
+      const lastConversation = get(
+        'SELECT query, response FROM conversations WHERE userId = ? ORDER BY createdAt DESC LIMIT 1',
+        [payload.userId]
+      ) as { query: string; response: string } | undefined;
+
+      if (lastConversation) {
+        lastContext = {
+          lastQuery: lastConversation.query,
+          lastResponse: lastConversation.response
+        };
+      }
+    } catch (dbError) {
+      console.error('Failed to fetch last context:', dbError);
+    }
+
     // Forward to n8n webhook with user context
     const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/capstone-voice';
 
@@ -31,6 +49,7 @@ export async function POST(request: NextRequest) {
       query,
       rollNumber: payload.rollNumber,
       userId: payload.userId,
+      lastContext,
     });
 
     const controller = new AbortController();
@@ -51,6 +70,7 @@ export async function POST(request: NextRequest) {
             query: query,
             rollNumber: payload.rollNumber,
             userId: payload.userId,
+            lastContext: lastContext,
           }),
           signal: controller.signal,
         });

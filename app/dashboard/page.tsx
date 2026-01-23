@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+interface Conversation {
+  id: number;
+  query: string;
+  response: string;
+  createdAt: string;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<{ rollNumber: string } | null>(null);
@@ -12,6 +19,8 @@ export default function Dashboard() {
   const [aiResponse, setAiResponse] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [textQuery, setTextQuery] = useState('');
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     // Fetch user info from token
@@ -37,6 +46,25 @@ export default function Dashboard() {
       credentials: 'include',
     });
     router.push('/login');
+  };
+
+  const fetchConversations = async () => {
+    try {
+      const response = await fetch('/api/conversations', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setConversations(data.conversations || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error);
+    }
+  };
+
+  const toggleHistory = () => {
+    if (!showHistory) {
+      fetchConversations();
+    }
+    setShowHistory(!showHistory);
   };
 
   const handleVoiceQuery = async () => {
@@ -92,6 +120,11 @@ export default function Dashboard() {
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
           window.speechSynthesis.speak(utterance);
+
+          // Refresh conversation history if visible
+          if (showHistory) {
+            fetchConversations();
+          }
         } else {
           setAiResponse('Sorry, I could not process your request.');
         }
@@ -164,6 +197,11 @@ export default function Dashboard() {
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
         window.speechSynthesis.speak(utterance);
+
+        // Refresh conversation history if visible
+        if (showHistory) {
+          fetchConversations();
+        }
       } else {
         setAiResponse('Sorry, I could not process your request.');
       }
@@ -210,7 +248,6 @@ export default function Dashboard() {
 
         {user && (
           <div style={{ marginBottom: '3rem' }}>
-            {/* <p style={{ marginBottom: '0.5rem' }}>Email: {user.email}</p> */}
             <p>Roll Number: {user.rollNumber}</p>
           </div>
         )}
@@ -300,6 +337,60 @@ export default function Dashboard() {
           <p style={{ fontSize: '0.85rem', opacity: 0.5, marginTop: '1.5rem' }}>
             Ask about your CGPA, attendance, or courses
           </p>
+        </div>
+
+        {/* Conversation History Section */}
+        <div style={{ marginTop: '2rem' }}>
+          <button
+            onClick={toggleHistory}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              backgroundColor: '#000',
+              border: '1px solid #fff',
+              color: '#fff',
+              cursor: 'pointer',
+              borderRadius: '4px',
+            }}
+          >
+            {showHistory ? 'Hide Conversation History' : 'Show Conversation History'}
+          </button>
+
+          {showHistory && (
+            <div style={{
+              marginTop: '1rem',
+              border: '1px solid #333',
+              borderRadius: '4px',
+              maxHeight: '400px',
+              overflowY: 'auto',
+            }}>
+              {conversations.length === 0 ? (
+                <p style={{ padding: '1rem', textAlign: 'center', opacity: 0.7 }}>
+                  No conversations yet
+                </p>
+              ) : (
+                conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    style={{
+                      padding: '1rem',
+                      borderBottom: '1px solid #333',
+                    }}
+                  >
+                    <p style={{ fontSize: '0.8rem', opacity: 0.5, marginBottom: '0.5rem' }}>
+                      {new Date(conv.createdAt).toLocaleString()}
+                    </p>
+                    <p style={{ marginBottom: '0.5rem' }}>
+                      <strong>You:</strong> {conv.query}
+                    </p>
+                    <p style={{ opacity: 0.9 }}>
+                      <strong>AI:</strong> {conv.response}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
