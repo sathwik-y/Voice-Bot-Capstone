@@ -149,10 +149,12 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
         if (rooms.availableRooms.length === 0) {
           return `All ${total} rooms are occupied on ${rooms.day} at ${rooms.time?.substring(0, 5)}.`;
         }
-        const roomList = rooms.availableRooms.slice(0, 10).join(', ');
-        const moreRooms = rooms.availableRooms.length > 10 ? ` (and ${rooms.availableRooms.length - 10} more)` : '';
         const timeLabel = rooms.time ? ` at ${rooms.time.substring(0, 5)}` : '';
-        return `Available rooms on ${rooms.day}${timeLabel}: ${roomList}${moreRooms}. ${rooms.availableRooms.length} free out of ${total} total.`;
+        if (rooms.availableRooms.length > 10) {
+          return `${rooms.availableRooms.length} out of ${total} rooms are free on ${rooms.day}${timeLabel}. ${rooms.occupiedRooms?.length || 0} occupied. Ask about a specific room for details.`;
+        }
+        const roomList = rooms.availableRooms.join(', ');
+        return `${rooms.availableRooms.length} rooms free on ${rooms.day}${timeLabel}: ${roomList}.`;
       }
 
       case 'room_status': {
@@ -201,6 +203,12 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
               : `No classes on ${data.day}.`;
           }
           const timeLabel = timetableTime ? ` at ${timetableTime.substring(0, 5)}` : '';
+          // If too many classes (full day), summarize for TTS
+          if (data.classes.length > 10 && !wantsStudents) {
+            const timeSlots = [...new Set(data.classes.map((c: any) => c.time.substring(0, 5)))].sort();
+            const uniqueCourses = [...new Set(data.classes.map((c: any) => c.courseTitle))];
+            return `${data.day} has ${data.classes.length} classes across ${timeSlots.length} time slots (${timeSlots[0]} to ${timeSlots[timeSlots.length - 1]}), covering ${uniqueCourses.length} different courses. Ask about a specific time for details, e.g. "Classes at 9 AM on ${data.day}".`;
+          }
           const lines = data.classes.map((c: any) => {
             let line = `${c.time.substring(0, 5)} | ${c.room} | ${c.courseTitle} — ${c.instructor}`;
             if (wantsStudents && c.students.length > 0) {
