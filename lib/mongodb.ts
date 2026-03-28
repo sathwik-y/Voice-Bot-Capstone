@@ -348,6 +348,79 @@ export async function getTimetableForDay(day: string) {
   return timetable;
 }
 
+/** Get classes scheduled on a day, optionally filtered by time, with enrolled student details */
+export async function getClassesOnDay(day: string, time?: string) {
+  const database = await getDb();
+  const timetable = await database.collection('timetable').findOne({ day });
+  if (!timetable || !timetable.slots || timetable.slots.length === 0) {
+    return { day, classes: [], message: `No classes scheduled on ${day}.` };
+  }
+
+  let slots = timetable.slots;
+
+  // Filter by time if specified
+  if (time) {
+    slots = slots.filter((s: any) => {
+      const [start, end] = s.time.split(' - ');
+      return time >= start && time < end;
+    });
+  }
+
+  // Sort by time then room
+  slots.sort((a: any, b: any) => a.time.localeCompare(b.time) || a.room.localeCompare(b.room));
+
+  // Get enrolled students from faculty collection for each course
+  const courseCodes = [...new Set(slots.map((s: any) => s.courseCode))];
+  const facultyDocs = await database.collection('faculty').find({
+    'courses.code': { $in: courseCodes }
+  }).toArray();
+
+  // Build courseCode → enrolledStudents map
+  const courseStudentsMap: Record<string, string[]> = {};
+  for (const fac of facultyDocs) {
+    for (const course of (fac.courses || [])) {
+      if (courseCodes.includes(course.code) && course.enrolledStudents?.length > 0) {
+        if (!courseStudentsMap[course.code]) courseStudentsMap[course.code] = [];
+        for (const roll of course.enrolledStudents) {
+          if (!courseStudentsMap[course.code].includes(roll)) {
+            courseStudentsMap[course.code].push(roll);
+          }
+        }
+      }
+    }
+  }
+
+  // Get student names
+  const allRolls = [...new Set(Object.values(courseStudentsMap).flat())];
+  const studentDocs = allRolls.length > 0
+    ? await database.collection('student').find(
+        { rollNumber: { $in: allRolls } },
+        { projection: { rollNumber: 1, name: 1 } }
+      ).toArray()
+    : [];
+  const rollToName: Record<string, string> = {};
+  for (const s of studentDocs) {
+    rollToName[s.rollNumber] = s.name;
+  }
+
+  // Enrich slots with student info
+  const enrichedSlots = slots.map((s: any) => {
+    const enrolledRolls = courseStudentsMap[s.courseCode] || [];
+    const students = enrolledRolls.map(r => ({ rollNumber: r, name: rollToName[r] || r }));
+    return {
+      time: s.time,
+      room: s.room,
+      courseCode: s.courseCode,
+      courseTitle: s.courseTitle,
+      instructor: s.instructor,
+      studentCount: students.length,
+      students,
+    };
+  });
+
+  return { day, time: time || null, classes: enrichedSlots };
+}
+
 export async function getFullTimetable() {
   const database = await getDb();
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

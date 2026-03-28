@@ -81,10 +81,12 @@ Intent definitions:
 - empty_rooms: Room availability. "Which rooms are free?" "Any empty classrooms?" "Which rooms are occupied?" "Rooms being used?"
 - room_status: What's in a specific room. "What's in ICT 519?" "Is ICT 602D free?"
 - my_students: Faculty's enrolled students. "Who are my students?" "How many students?"
-- timetable: Full weekly timetable, room allocations. "Show the timetable" "Room allocations"
+- timetable: Full weekly timetable, room allocations, classes on a specific day/time. "Show the timetable" "Room allocations" "What classes on Monday?" "Classes at 9 AM on Tuesday" "First hour on Wednesday"
 - unknown: Cannot determine
 
 IMPORTANT RULES:
+- "first hour" or "first class" → time should be "09:00:00" (earliest slot)
+- "last hour" or "last class" → time should be "16:00:00" (latest slot)
 - "room 302" or "ICT 302" → roomId should be "ICT / 302"
 - Any bare room number → assume ICT building, format as "ICT / <number>"
 - Roll numbers look like VU22CSEN0101112 — always extract them
@@ -260,16 +262,22 @@ function fallbackQueryUnderstanding(query: string): QueryUnderstanding {
   }
 
   // Extract time entity
+  // Handle natural language times first
+  if (lowerQuery.match(/\b(first\s*(hour|class|period|slot))\b/)) {
+    entities.time = '09:00:00';
+  } else if (lowerQuery.match(/\b(last\s*(hour|class|period|slot))\b/)) {
+    entities.time = '16:00:00';
+  }
   const timeMatch12 = lowerQuery.match(/(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)/i);
   const timeMatch24 = lowerQuery.match(/\b(\d{1,2}):(\d{2})\b/);
-  if (timeMatch12) {
+  if (!entities.time && timeMatch12) {
     let hours = parseInt(timeMatch12[1]);
     const minutes = timeMatch12[2] || '00';
     const ampm = timeMatch12[3].replace(/\./g, '').toLowerCase();
     if (ampm === 'pm' && hours !== 12) hours += 12;
     if (ampm === 'am' && hours === 12) hours = 0;
     entities.time = `${String(hours).padStart(2, '0')}:${minutes}:00`;
-  } else if (timeMatch24) {
+  } else if (!entities.time && timeMatch24) {
     entities.time = `${String(parseInt(timeMatch24[1])).padStart(2, '0')}:${timeMatch24[2]}:00`;
   }
 
@@ -313,6 +321,12 @@ function fallbackQueryUnderstanding(query: string): QueryUnderstanding {
     intent = 'today_schedule';
     normalizedQuery = 'What classes are happening now?';
     reasoning = 'Keyword: classes happening now';
+  }
+  // Classes scheduled on a day / at a time
+  else if (lowerQuery.match(/(class|lecture|schedule).*\b(on|for)\b.*(monday|tuesday|wednesday|thursday|friday|saturday)/i) || lowerQuery.match(/(what|which).*(class|lecture|scheduled).*\b(monday|tuesday|wednesday|thursday|friday|saturday)/i)) {
+    intent = 'timetable';
+    normalizedQuery = query;
+    reasoning = 'Keyword: classes scheduled on specific day';
   }
   // Today schedule
   else if (lowerQuery.match(/today.*(class|schedule|timetable|lecture)/) || lowerQuery.match(/(class|schedule|timetable|lecture).*today/) || lowerQuery.match(/^my\s*schedule\??$/i) || lowerQuery.match(/^schedule\??$/i)) {

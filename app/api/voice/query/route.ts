@@ -6,7 +6,7 @@ import {
   getStudentNextClass, getStudentScheduleToday,
   getFacultyNextClass, getFacultyScheduleToday, getFacultyStudents, getFacultyByLoginId,
   getAvailableRooms, getRoomStatus, normalizeRoomId,
-  getStudentByRoll,
+  getStudentByRoll, getClassesOnDay,
 } from '@/lib/mongodb';
 
 export async function POST(request: NextRequest) {
@@ -169,7 +169,25 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
       }
 
       case 'timetable': {
-        return 'The full timetable is available in the admin dashboard. You can ask about specific days like "What classes are on Monday?" or specific rooms like "What\'s in ICT 519?"';
+        const timetableDay = understanding.entities?.day;
+        if (timetableDay) {
+          const timetableTime = understanding.entities?.time;
+          const data = await getClassesOnDay(timetableDay, timetableTime || undefined);
+          if (data.classes.length === 0) {
+            return timetableTime
+              ? `No classes scheduled on ${data.day} at ${timetableTime.substring(0, 5)}.`
+              : `No classes scheduled on ${data.day}.`;
+          }
+          const timeLabel = timetableTime ? ` at ${timetableTime.substring(0, 5)}` : '';
+          const lines = data.classes.map((c: any) => {
+            const studentNames = c.students.length > 0
+              ? c.students.map((s: any) => `${s.name} (${s.rollNumber})`).join(', ')
+              : 'No enrolled students found';
+            return `${c.time.substring(0, 5)}-${c.time.split(' - ')[1]?.substring(0, 5)} | ${c.room} | ${c.courseTitle} (${c.courseCode}) | ${c.instructor} | Students: ${studentNames}`;
+          });
+          return `Classes on ${data.day}${timeLabel} (${data.classes.length} total):\n${lines.join('\n')}`;
+        }
+        return 'You can ask about specific days like "What classes are on Monday?" or "Classes at 9 AM on Tuesday". I\'ll show courses, rooms, instructors, and enrolled students.';
       }
 
       case 'my_students': {
