@@ -164,11 +164,17 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
           const data = await getStudentsInRoom(roomId);
           if (!data) return `Room ${roomId} not found.`;
           if (data.classes.length === 0) return `${data.roomId} has no classes today.`;
-          const lines = data.classes.map((c: any) => {
-            const names = c.students.map((s: any) => s.name).join(', ');
-            return `${c.courseTitle} (${c.time.substring(0, 5)}) — ${names || 'No students found'}`;
-          });
-          return `Students in ${data.roomId}:\n${lines.join('\n')}`;
+          // Deduplicate by course — same course at multiple slots has same students
+          const seen = new Map<string, { title: string; students: string[] }>();
+          for (const c of data.classes) {
+            if (!seen.has(c.courseCode)) {
+              seen.set(c.courseCode, { title: c.courseTitle, students: c.students.map((s: any) => s.name) });
+            }
+          }
+          const parts = [...seen.values()].map(c =>
+            `${c.title} has ${c.students.length} students: ${c.students.join(', ')}`
+          );
+          return `${data.roomId} — ${parts.join('. ')}.`;
         }
 
         const statuses = await getRoomStatus(roomId || undefined);
@@ -223,11 +229,16 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
       if (understanding.entities?.roomId && userQuery.toLowerCase().match(/\b(students?|who('s| is| are)?\s*(in|enrolled|taking)|get\s*me.*student)\b/)) {
         const data = await getStudentsInRoom(understanding.entities.roomId);
         if (data && data.classes.length > 0) {
-          const lines = data.classes.map((c: any) => {
-            const names = c.students.map((s: any) => s.name).join(', ');
-            return `${c.courseTitle} (${c.time.substring(0, 5)}) — ${names || 'No students found'}`;
-          });
-          return `Students in ${data.roomId}:\n${lines.join('\n')}`;
+          const seen = new Map<string, { title: string; students: string[] }>();
+          for (const c of data.classes) {
+            if (!seen.has(c.courseCode)) {
+              seen.set(c.courseCode, { title: c.courseTitle, students: c.students.map((s: any) => s.name) });
+            }
+          }
+          const parts = [...seen.values()].map(c =>
+            `${c.title} has ${c.students.length} students: ${c.students.join(', ')}`
+          );
+          return `${data.roomId} — ${parts.join('. ')}.`;
         }
       }
       // If there's a student roll number, try to look up their data
