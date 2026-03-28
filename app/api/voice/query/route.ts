@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { run, get, query } from '@/lib/db';
-import { understandQuery, enhanceQueryForN8N, QueryIntent } from '@/lib/gemini';
+import { understandQuery, QueryIntent, generateAcademicResponse } from '@/lib/gemini';
 import {
   getStudentNextClass, getStudentScheduleToday,
   getFacultyNextClass, getFacultyScheduleToday, getFacultyStudents, getFacultyByLoginId,
-  getAvailableRooms, getRoomStatus,
+  getAvailableRooms, getRoomStatus, normalizeRoomId,
   getStudentByRoll,
 } from '@/lib/mongodb';
-
-// Intents that can be handled directly without n8n
-const DIRECT_INTENTS: QueryIntent[] = ['next_class', 'today_schedule', 'empty_rooms', 'room_status', 'my_students', 'timetable'];
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -51,19 +48,14 @@ export async function POST(request: NextRequest) {
 
     let aiResponse: string;
 
-    // Route based on intent type
-    if (DIRECT_INTENTS.includes(understanding.intent)) {
-      // Handle schedule/room queries directly via MongoDB
-      aiResponse = await handleDirectQuery(understanding.intent, payload.rollNumber, payload.role, understanding);
-    } else if (payload.role === 'faculty' || payload.role === 'admin') {
-      // Faculty/admin academic queries — try to find a student to query about
-      // If the query mentions a student roll number, query that student's data via n8n
-      // Otherwise, try to answer from faculty data or fall back to n8n with the first enrolled student
-      aiResponse = await handleFacultyAdminQuery(understanding, payload, userQuery, contextMessages);
-    } else {
-      // Student academic queries → n8n (CGPA, attendance, courses, faculty, general_status)
-      aiResponse = await queryN8N(understanding, payload, userQuery, contextMessages);
+    // Try to extract roll number from query text if Gemini didn't catch it
+    if (!understanding.entities.studentRoll) {
+      const rollMatch = userQuery.match(/VU\d{2}CSEN\d{7}/i);
+      if (rollMatch) understanding.entities.studentRoll = rollMatch[0].toUpperCase();
     }
+
+    // Route based on role and intent
+    aiResponse = await handleQuery(understanding, payload, userQuery, contextMessages);
 
     const responseTimeMs = Date.now() - startTime;
 
@@ -94,9 +86,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Voice query error:', error);
-    if (error.name === 'AbortError') {
-      return NextResponse.json({ error: 'Request timed out' }, { status: 504 });
-    }
     return NextResponse.json(
       { error: 'Failed to process query: ' + (error.message || 'Unknown error') },
       { status: 500 }
@@ -104,15 +93,22 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ─── Direct MongoDB queries (schedule, rooms, etc.) ─────────
+// ─── Main query handler ───────────────────────────────────────
 
-async function handleDirectQuery(intent: QueryIntent, rollNumber: string, role: string, understanding: any): Promise<string> {
+async function handleQuery(understanding: any, payload: any, userQuery: string, contextMessages: any[]): Promise<string> {
+  const { intent } = understanding;
+  const { rollNumber, role } = payload;
+
   try {
+    // ── Schedule & Room queries (all roles) ──
     switch (intent) {
       case 'next_class': {
         if (role === 'faculty') {
           const result = await getFacultyNextClass(rollNumber);
-          return result?.message || 'Could not find your schedule. Make sure your faculty profile is set up.';
+          return result?.message || 'Could not find your schedule.';
+        }
+        if (role === 'admin') {
+          return 'As admin, you don\'t have a personal class schedule. Try asking about room availability or a specific student\'s schedule.';
         }
         const result = await getStudentNextClass(rollNumber);
         return result?.message || 'Could not find your schedule.';
@@ -127,6 +123,15 @@ async function handleDirectQuery(intent: QueryIntent, rollNumber: string, role: 
           const classList = schedule.classes.map((c: any) => `${c.time.split(' - ')[0]} - ${c.title} in ${c.room} (${c.studentCount} students)`).join('\n');
           return `Your schedule for today (${schedule.day}):\n${classList}`;
         }
+        if (role === 'admin') {
+          const today = new Date();
+          const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const dayName = days[today.getDay()];
+          if (dayName === 'Saturday' || dayName === 'Sunday') {
+            return `It's ${dayName}! No classes today — enjoy your weekend!`;
+          }
+          return 'As admin, you can ask about room availability, specific room status, or the timetable for any day.';
+        }
         const schedule = await getStudentScheduleToday(rollNumber);
         if (!schedule) return 'Could not find your schedule.';
         if (schedule.isHoliday) return `It's ${schedule.day}! No classes today — enjoy your holiday!`;
@@ -136,11 +141,18 @@ async function handleDirectQuery(intent: QueryIntent, rollNumber: string, role: 
       }
 
       case 'empty_rooms': {
-        const rooms = await getAvailableRooms();
-        if (rooms.isHoliday) return rooms.message || 'All rooms are free today!';
-        if (rooms.availableRooms.length === 0) return 'All rooms are currently occupied.';
+        const requestedDay = understanding.entities?.day;
+        const requestedTime = understanding.entities?.time;
+        const rooms = await getAvailableRooms(requestedDay || undefined, requestedTime || undefined);
+        if (rooms.isHoliday) return rooms.message || `All rooms are free on ${rooms.day}!`;
+        const total = rooms.availableRooms.length + (rooms.occupiedRooms?.length || 0);
+        if (rooms.availableRooms.length === 0) {
+          return `All ${total} rooms are occupied on ${rooms.day} at ${rooms.time?.substring(0, 5)}.`;
+        }
         const roomList = rooms.availableRooms.slice(0, 10).join(', ');
-        return `Currently available rooms: ${roomList}. ${rooms.availableRooms.length} rooms free out of ${rooms.availableRooms.length + (rooms.occupiedRooms?.length || 0)} total.`;
+        const moreRooms = rooms.availableRooms.length > 10 ? ` (and ${rooms.availableRooms.length - 10} more)` : '';
+        const timeLabel = rooms.time ? ` at ${rooms.time.substring(0, 5)}` : '';
+        return `Available rooms on ${rooms.day}${timeLabel}: ${roomList}${moreRooms}. ${rooms.availableRooms.length} free out of ${total} total.`;
       }
 
       case 'room_status': {
@@ -156,33 +168,189 @@ async function handleDirectQuery(intent: QueryIntent, rollNumber: string, role: 
         return `Found ${statuses.length} rooms. Ask about a specific room like "What's in ICT 519?"`;
       }
 
+      case 'timetable': {
+        return 'The full timetable is available in the admin dashboard. You can ask about specific days like "What classes are on Monday?" or specific rooms like "What\'s in ICT 519?"';
+      }
+
       case 'my_students': {
         if (role !== 'faculty' && role !== 'admin') return 'This query is for faculty members.';
         const data = await getFacultyStudents(rollNumber);
-        if (!data) return 'Faculty profile not found. Make sure your account is linked to faculty data.';
+        if (!data) return 'Faculty profile not found.';
         const studentNames = data.students.map((s: any) => `${s.name} (${s.rollNumber})`).join(', ');
         const courseInfo = data.courses.map((c: any) => `${c.title}: ${c.enrolledCount} students`).join('; ');
-        return `Your students: ${studentNames}. Courses: ${courseInfo}.`;
+        return `You have ${data.totalStudents} student(s). Courses: ${courseInfo}. Students: ${studentNames}.`;
       }
-
-      case 'timetable': {
-        return 'The full timetable is available in the admin dashboard. You can ask about specific days like "What classes are on Monday?" or specific rooms.';
-      }
-
-      default:
-        return 'I could not process that query.';
     }
+
+    // ── Help / unknown intent ──
+    if (intent === 'unknown') {
+      // If there's a student roll number, try to look up their data anyway
+      if (understanding.entities?.studentRoll) {
+        if (role === 'faculty' || role === 'admin') {
+          return handleStudentLookup({ ...understanding, intent: 'general_status' }, understanding.entities.studentRoll, userQuery, contextMessages);
+        }
+      }
+      return getHelpMessage(role);
+    }
+
+    // ── Faculty/Admin: own course/student queries ──
+    if (role === 'faculty' || role === 'admin') {
+      return handleFacultyAdminQuery(understanding, payload, userQuery, contextMessages);
+    }
+
+    // ── Student: academic data queries (direct MongoDB, no n8n) ──
+    return handleStudentAcademicQuery(understanding, rollNumber, userQuery, contextMessages);
+
   } catch (error: any) {
-    console.error('Direct query error:', error);
-    return 'Sorry, I had trouble accessing the schedule data. Please try again.';
+    console.error('Query handling error:', error);
+    return 'Sorry, I had trouble processing that. Please try again.';
+  }
+}
+
+// ─── Help messages ────────────────────────────────────────────
+
+function getHelpMessage(role: string): string {
+  if (role === 'student') {
+    return 'I can help you with:\n• CGPA and grades — "What\'s my CGPA?"\n• Attendance — "How\'s my attendance?"\n• Courses — "What courses do I have?"\n• Faculty — "Who teaches Advanced Coding?"\n• Schedule — "What\'s my next class?" or "Today\'s schedule"\n• Room availability — "Which rooms are free?"\n• Room status — "What\'s in ICT 519?"';
+  }
+  if (role === 'faculty') {
+    return 'I can help you with:\n• Your courses — "What do I teach?"\n• Your students — "Who are my students?"\n• Schedule — "What\'s my next class?" or "Today\'s schedule"\n• Room availability — "Which rooms are free on Monday?"\n• Room status — "What\'s in ICT 519?"\n• Student lookup — "What is the CGPA of VU22CSEN0101112?"';
+  }
+  return 'I can help you with:\n• Room availability — "Which rooms are free?" or "Rooms free on Monday at 10 AM"\n• Room status — "What\'s in ICT 519?"\n• Timetable — "Show the timetable"\n• Student data — "What is the CGPA of VU22CSEN0101112?"\n• Student courses — "What courses does VU22CSEN0100201 have?"';
+}
+
+// ─── Student academic data (replaces n8n) ─────────────────────
+
+async function handleStudentAcademicQuery(understanding: any, rollNumber: string, userQuery: string, contextMessages: any[]): Promise<string> {
+  const student = await getStudentByRoll(rollNumber);
+  if (!student) return 'Could not find your student record. Please contact support.';
+
+  const { intent } = understanding;
+
+  // Build relevant data based on intent
+  const semesters = student.grades?.semesters ?? {};
+  const latestSemesterKey = Object.keys(semesters).sort((a: string, b: string) => Number(b) - Number(a))[0];
+  const latestSemester = semesters[latestSemesterKey] ?? {};
+
+  let relevantData: any = { rollNumber: student.rollNumber, name: student.name };
+
+  switch (intent) {
+    case 'cgpa':
+      relevantData.cgpa = latestSemester.cgpa ?? null;
+      relevantData.sgpa = latestSemester.sgpa ?? null;
+      relevantData.grades = latestSemester.endGrades ?? [];
+      break;
+    case 'attendance':
+      relevantData.attendance = student.attendance ?? [];
+      break;
+    case 'faculty':
+      relevantData.faculty = student.faculty ?? {};
+      relevantData.courses = student.currentSemesterCourses ?? student.registeredCourses?.map((c: any) => ({ code: c.code, name: c.title })) ?? [];
+      break;
+    case 'courses':
+    case 'course_details':
+      relevantData.courses =
+        student.currentSemesterCourses ??
+        student.registeredCourses?.map((c: any) => ({ code: c.code, name: c.title })) ??
+        student.attendance?.map((a: any) => ({ code: a.code, name: a.name })) ??
+        [];
+      break;
+    case 'general_status':
+      relevantData.cgpa = latestSemester.cgpa ?? null;
+      relevantData.sgpa = latestSemester.sgpa ?? null;
+      relevantData.attendance = student.attendance ?? [];
+      relevantData.courses =
+        student.currentSemesterCourses ??
+        student.attendance?.map((a: any) => ({ code: a.code, name: a.name })) ??
+        [];
+      break;
+    default:
+      // For unknown intents, give everything
+      relevantData.cgpa = latestSemester.cgpa ?? null;
+      relevantData.attendance = student.attendance ?? [];
+      relevantData.courses =
+        student.currentSemesterCourses ??
+        student.attendance?.map((a: any) => ({ code: a.code, name: a.name })) ??
+        [];
+      break;
+  }
+
+  // Build context from conversation history
+  const lastContext = contextMessages.length > 0
+    ? { lastQuery: contextMessages[contextMessages.length - 1].query, lastResponse: contextMessages[contextMessages.length - 1].response }
+    : undefined;
+
+  // Use Gemini to generate a natural language response
+  return generateAcademicResponse(relevantData, userQuery, intent, lastContext);
+}
+
+// ─── Faculty/Admin student lookup (with proper framing) ───────
+
+async function handleStudentLookup(understanding: any, studentRoll: string, userQuery: string, contextMessages: any[]): Promise<string> {
+  const student = await getStudentByRoll(studentRoll);
+  if (!student) return `Student ${studentRoll} not found in the database.`;
+
+  const { intent } = understanding;
+  const semesters = student.grades?.semesters ?? {};
+  const latestSemesterKey = Object.keys(semesters).sort((a: string, b: string) => Number(b) - Number(a))[0];
+  const latestSemester = semesters[latestSemesterKey] ?? {};
+
+  switch (intent) {
+    case 'cgpa':
+      if (latestSemester.cgpa != null) {
+        return `${student.name} (${studentRoll}) has a CGPA of ${latestSemester.cgpa}${latestSemester.sgpa ? ` and SGPA of ${latestSemester.sgpa}` : ''}.`;
+      }
+      return `No CGPA data found for ${student.name} (${studentRoll}).`;
+
+    case 'attendance':
+      if (student.attendance && student.attendance.length > 0) {
+        const list = student.attendance.map((a: any) => `${a.name || a.code}: ${a.percentage || a.attendancePercentage || 'N/A'}%`).join(', ');
+        return `Attendance for ${student.name} (${studentRoll}): ${list}.`;
+      }
+      return `No attendance data found for ${student.name} (${studentRoll}).`;
+
+    case 'courses':
+    case 'course_details':
+      const courses = student.currentSemesterCourses ?? student.registeredCourses?.map((c: any) => ({ code: c.code, name: c.title })) ?? [];
+      if (courses.length > 0) {
+        const list = courses.map((c: any) => c.name || c.title || c.code).join(', ');
+        return `${student.name} (${studentRoll}) is enrolled in ${courses.length} courses: ${list}.`;
+      }
+      return `No course data found for ${student.name} (${studentRoll}).`;
+
+    case 'faculty':
+      if (student.faculty && Object.keys(student.faculty).length > 0) {
+        const list = Object.entries(student.faculty).map(([code, val]) => {
+          const name = typeof val === 'object' && val !== null ? (val as any).name || JSON.stringify(val) : String(val);
+          return `${code}: ${name}`;
+        }).join(', ');
+        return `Faculty for ${student.name} (${studentRoll}): ${list}.`;
+      }
+      return `No faculty data found for ${student.name} (${studentRoll}).`;
+
+    case 'general_status':
+    default: {
+      const parts = [`${student.name} (${studentRoll})`];
+      if (latestSemester.cgpa != null) parts.push(`CGPA: ${latestSemester.cgpa}`);
+      if (student.attendance?.length > 0) {
+        const avg = student.attendance.reduce((sum: number, a: any) => sum + (a.percentage || a.attendancePercentage || 0), 0) / student.attendance.length;
+        parts.push(`Avg attendance: ${avg.toFixed(1)}%`);
+      }
+      const courseCount = student.currentSemesterCourses?.length || student.registeredCourses?.length || 0;
+      if (courseCount > 0) parts.push(`${courseCount} courses`);
+      return parts.join(' | ');
+    }
   }
 }
 
 // ─── Faculty/Admin academic queries ─────────────────────────
 
 async function handleFacultyAdminQuery(understanding: any, payload: any, userQuery: string, contextMessages: any[]): Promise<string> {
-  // If faculty is asking about their own courses/students/identity, handle directly
-  if (understanding.intent === 'courses' || understanding.intent === 'faculty' || understanding.intent === 'course_details') {
+  const queryLower = userQuery.toLowerCase();
+  const { intent } = understanding;
+
+  // Faculty asking about own courses
+  if ((intent === 'courses' || intent === 'faculty' || intent === 'course_details') && payload.role === 'faculty') {
     try {
       const faculty = await getFacultyByLoginId(payload.rollNumber);
       if (faculty && faculty.courses?.length > 0) {
@@ -192,126 +360,50 @@ async function handleFacultyAdminQuery(understanding: any, payload: any, userQue
           return `${c.title} (${c.code}) - Room: ${c.room || 'TBD'}, ${students} students enrolled${schedule ? ', Schedule: ' + schedule : ''}`;
         }).join('\n');
         return `You teach ${faculty.courses.length} course(s):\n${courseList}`;
-      } else if (faculty) {
-        return `You are ${faculty.name} in ${faculty.department || 'CSE'}. No courses currently assigned.`;
-      }
-    } catch { /* fall through to n8n */ }
-  }
-
-  // Catch student/class related queries that Gemini might misclassify
-  const queryLower = userQuery.toLowerCase();
-  const isStudentQuery = queryLower.match(/students?\s*(in|of|enrolled|taking|are|list)|who.*(in|taking|enrolled)|class\s*(list|roster|students)/);
-  if (isStudentQuery || understanding.intent === 'my_students') {
-    try {
-      const data = await getFacultyStudents(payload.rollNumber);
-      if (data && data.students.length > 0) {
-        const studentNames = data.students.map((s: any) => `${s.name} (${s.rollNumber})`).join(', ');
-        const courseInfo = data.courses.map((c: any) => `${c.title}: ${c.enrolledCount} students`).join('; ');
-        return `Your students: ${studentNames}. Courses: ${courseInfo}.`;
       }
     } catch { /* fall through */ }
   }
 
-  // Handle general/unknown queries with role-appropriate responses
-  if (understanding.intent === 'unknown' || understanding.intent === 'general_status') {
-    try {
-      const faculty = await getFacultyByLoginId(payload.rollNumber);
-      if (faculty && faculty.courses?.length > 0) {
-        const courseNames = faculty.courses.map((c: any) => c.title).join(', ');
-        return `As you are a faculty, I can help with your courses, schedule, students, and room availability. You teach: ${courseNames}. Try asking about your next class, today's schedule, or your students.`;
-      }
-    } catch { /* fall through */ }
-
-    if (payload.role === 'admin') {
-      return 'As you are an admin, I can help with room status, timetable, and student data. Try asking which rooms are free, or about a student by their roll number.';
+  // Faculty/admin asking about students (broader matching)
+  const isStudentQuery = queryLower.match(/students?\s*(in|of|enrolled|taking|are|list)|who.*(in|taking|enrolled|my\s*course)|class\s*(list|roster|students)|how many students|student list|enrolled students|class roster/);
+  if (isStudentQuery || intent === 'my_students') {
+    if (payload.role === 'faculty') {
+      try {
+        const data = await getFacultyStudents(payload.rollNumber);
+        if (data && data.students.length > 0) {
+          const studentNames = data.students.map((s: any) => `${s.name} (${s.rollNumber})`).join(', ');
+          const courseInfo = data.courses.map((c: any) => `${c.title}: ${c.enrolledCount} students`).join('; ');
+          return `You have ${data.totalStudents} student(s). Courses: ${courseInfo}. Students: ${studentNames}.`;
+        }
+      } catch { /* fall through */ }
     }
   }
 
-  // For specific student-data queries (CGPA, attendance of a particular student)
-  // Only proceed to n8n if they mention a specific student
-  if (understanding.entities?.studentRoll) {
-    return queryN8N(understanding, { ...payload, rollNumber: understanding.entities.studentRoll }, userQuery, contextMessages);
+  // Faculty/admin looking up a specific student's data
+  const studentRoll = understanding.entities?.studentRoll;
+  if (studentRoll) {
+    return handleStudentLookup(understanding, studentRoll, userQuery, contextMessages);
   }
 
-  // Faculty/admin asking generic academic queries without specifying a student
-  if (understanding.intent === 'cgpa' || understanding.intent === 'attendance') {
-    return `As ${payload.role}, you can look up any student's ${understanding.intent} by specifying their roll number. For example: "What is the CGPA of VU22CSEN0101112?"`;
+  // If query mentions CGPA/attendance without a roll number, prompt for one
+  if (intent === 'cgpa' || intent === 'attendance') {
+    return `As ${payload.role}, you can look up any student's ${intent} by specifying their roll number. For example: "What is the CGPA of VU22CSEN0101112?"`;
   }
 
-  // Default: try n8n with a demo student for other intents
-  return queryN8N(understanding, { ...payload, rollNumber: 'VU22CSEN0101112' }, userQuery, contextMessages);
-}
-
-// ─── n8n webhook query ──────────────────────────────────────
-
-async function queryN8N(understanding: any, payload: any, userQuery: string, contextMessages: any[]): Promise<string> {
-  const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/capstone-voice';
-  const enhancedQuery = enhanceQueryForN8N(understanding, userQuery);
-  const conversationHistory = contextMessages.map((c: any) => `User: ${c.query}\nAssistant: ${c.response}`).join('\n\n');
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-  let n8nResponse;
-  let retries = 0;
-  const maxRetries = 2;
-
-  while (retries <= maxRetries) {
-    try {
-      n8nResponse = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: enhancedQuery,
-          originalQuery: userQuery,
-          intent: understanding.intent,
-          rollNumber: payload.rollNumber,
-          userId: payload.userId,
-          userRole: payload.role,
-          lastContext: contextMessages.length > 0 ? { lastQuery: contextMessages[contextMessages.length - 1].query, lastResponse: contextMessages[contextMessages.length - 1].response } : null,
-          conversationHistory,
-          entities: understanding.entities,
-        }),
-        signal: controller.signal,
-      });
-
-      if (n8nResponse.ok) break;
-
-      if (n8nResponse.status === 503 && retries < maxRetries) {
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
-      }
-
-      throw new Error(`n8n workflow failed: ${n8nResponse.status}`);
-    } catch (fetchError: any) {
-      if (fetchError.name === 'AbortError') throw fetchError;
-      if (retries < maxRetries) {
-        retries++;
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        continue;
-      }
-      throw fetchError;
+  // General status for faculty (not a student lookup)
+  if (intent === 'general_status') {
+    if (payload.role === 'faculty') {
+      try {
+        const faculty = await getFacultyByLoginId(payload.rollNumber);
+        if (faculty && faculty.courses?.length > 0) {
+          const courseNames = faculty.courses.map((c: any) => c.title).join(', ');
+          return `You teach: ${courseNames}. Try asking about your next class, your students, or room availability.`;
+        }
+      } catch { /* fall through */ }
     }
+    return getHelpMessage(payload.role);
   }
 
-  clearTimeout(timeoutId);
-
-  if (!n8nResponse || !n8nResponse.ok) {
-    throw new Error('n8n workflow failed after retries');
-  }
-
-  const responseText = await n8nResponse.text();
-  if (!responseText || responseText.trim() === '') {
-    return 'The academic data service returned no data. Please make sure the n8n workflow is active.';
-  }
-
-  let aiData;
-  try {
-    aiData = JSON.parse(responseText);
-  } catch {
-    return 'Received an invalid response from the academic data service.';
-  }
-
-  return aiData.output || aiData.response || aiData.text || 'I could not process that request.';
+  // Default: try to answer as student data if roll number was provided
+  return 'I\'m not sure how to answer that. Try asking about rooms, schedules, or student data (with a roll number).';
 }

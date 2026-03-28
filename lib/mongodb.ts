@@ -15,6 +15,36 @@ async function getDb(): Promise<Db> {
   return db;
 }
 
+// ─── Helpers ───────────────────────────────────────────────
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function getCurrentDay(): string {
+  return WEEKDAYS[new Date().getDay()];
+}
+
+function getCurrentTime(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`;
+}
+
+/** Normalize room IDs: "ICT 519" → "ICT / 519", "room 302" → "ICT / 302", "LH 102" → "LH / 102" */
+export function normalizeRoomId(input: string): string {
+  let cleaned = input.trim();
+  // Remove leading "room" prefix
+  cleaned = cleaned.replace(/^room\s*/i, '');
+  // "ICT519" or "ICT 519" or "ICT/519" → "ICT / 519"
+  const match = cleaned.match(/^(ICT|LH)\s*\/?\s*(\d+\w*)$/i);
+  if (match) {
+    return `${match[1].toUpperCase()} / ${match[2]}`;
+  }
+  // Bare number like "302" → assume ICT
+  if (/^\d+\w*$/.test(cleaned)) {
+    return `ICT / ${cleaned}`;
+  }
+  return cleaned;
+}
+
 // ─── Student Queries ────────────────────────────────────────
 
 export async function getStudentByRoll(rollNumber: string) {
@@ -22,23 +52,22 @@ export async function getStudentByRoll(rollNumber: string) {
   return database.collection('student').findOne({ rollNumber });
 }
 
-export async function getStudentScheduleToday(rollNumber: string) {
+/** Get student schedule for a specific day (defaults to today) */
+export async function getStudentScheduleForDay(rollNumber: string, day?: string) {
   const student = await getStudentByRoll(rollNumber);
   if (!student) return null;
 
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = days[now.getDay()];
+  const targetDay = day || getCurrentDay();
 
-  if (today === 'Sunday' || today === 'Saturday') {
-    return { isHoliday: true, day: today, classes: [] };
+  if (targetDay === 'Sunday' || targetDay === 'Saturday') {
+    return { isHoliday: true, day: targetDay, classes: [] };
   }
 
   const classes: any[] = [];
   for (const course of (student.registeredCourses || [])) {
     for (const slot of (course.schedule || [])) {
-      if (slot.startsWith(today)) {
-        const time = slot.replace(`${today}: `, '');
+      if (slot.startsWith(targetDay)) {
+        const time = slot.replace(`${targetDay}: `, '');
         classes.push({
           time,
           code: course.code,
@@ -51,35 +80,67 @@ export async function getStudentScheduleToday(rollNumber: string) {
   }
 
   classes.sort((a, b) => a.time.localeCompare(b.time));
-  return { isHoliday: false, day: today, classes };
+  return { isHoliday: false, day: targetDay, classes };
 }
 
+export async function getStudentScheduleToday(rollNumber: string) {
+  return getStudentScheduleForDay(rollNumber);
+}
+
+/** Find the next upcoming class, looking ahead to future days if needed */
 export async function getStudentNextClass(rollNumber: string) {
-  const schedule = await getStudentScheduleToday(rollNumber);
-  if (!schedule) return null;
-  if (schedule.isHoliday) return { isHoliday: true, day: schedule.day, message: `It's ${schedule.day}! No classes today, enjoy your holiday!` };
-  if (schedule.classes.length === 0) return { isHoliday: false, day: schedule.day, message: `No classes scheduled for today (${schedule.day}).` };
+  const student = await getStudentByRoll(rollNumber);
+  if (!student) return null;
 
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`;
+  const today = getCurrentDay();
+  const currentTime = getCurrentTime();
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const todayIdx = dayOrder.indexOf(today);
 
-  const upcoming = schedule.classes.filter((c: any) => {
-    const startTime = c.time.split(' - ')[0];
-    return startTime >= currentTime;
-  });
+  // Check today first (if weekday), then upcoming days
+  const daysToCheck = todayIdx >= 0 ? dayOrder.slice(todayIdx) : dayOrder;
 
-  if (upcoming.length === 0) {
-    return { isHoliday: false, day: schedule.day, message: 'All classes are done for today! No more classes remaining.', classes: schedule.classes };
+  for (const day of daysToCheck) {
+    const schedule = await getStudentScheduleForDay(rollNumber, day);
+    if (!schedule || schedule.isHoliday) continue;
+
+    for (const cls of schedule.classes) {
+      const startTime = cls.time.split(' - ')[0];
+      // If checking today, only consider future classes
+      if (day === today && startTime < currentTime) continue;
+
+      const isToday = day === today;
+      const timeStr = isToday
+        ? `today at ${startTime.substring(0, 5)}`
+        : `${day} at ${startTime.substring(0, 5)}`;
+
+      return {
+        isHoliday: false,
+        day,
+        nextClass: cls,
+        message: `Your next class is ${cls.title} (${cls.code}) on ${timeStr} in ${cls.room} with ${cls.instructor}.`,
+      };
+    }
   }
 
-  const next = upcoming[0];
-  return {
-    isHoliday: false,
-    day: schedule.day,
-    nextClass: next,
-    remaining: upcoming.length,
-    message: `Your next class is ${next.title} (${next.code}) at ${next.time.split(' - ')[0]} in ${next.room} with ${next.instructor}. You have ${upcoming.length} class${upcoming.length > 1 ? 'es' : ''} remaining today.`,
-  };
+  // If today is weekend or no more classes this week
+  if (today === 'Sunday' || today === 'Saturday') {
+    // Look at next week starting Monday
+    for (const day of dayOrder) {
+      const schedule = await getStudentScheduleForDay(rollNumber, day);
+      if (!schedule || schedule.isHoliday || schedule.classes.length === 0) continue;
+      const cls = schedule.classes[0];
+      const startTime = cls.time.split(' - ')[0];
+      return {
+        isHoliday: false,
+        day,
+        nextClass: cls,
+        message: `Your next class is ${cls.title} (${cls.code}) on ${day} at ${startTime.substring(0, 5)} in ${cls.room} with ${cls.instructor}.`,
+      };
+    }
+  }
+
+  return { isHoliday: false, day: today, message: 'No upcoming classes found this week.' };
 }
 
 // ─── Faculty Queries ────────────────────────────────────────
@@ -89,23 +150,21 @@ export async function getFacultyByLoginId(facultyId: string) {
   return database.collection('faculty').findOne({ facultyId });
 }
 
-export async function getFacultyScheduleToday(facultyId: string) {
+export async function getFacultyScheduleForDay(facultyId: string, day?: string) {
   const faculty = await getFacultyByLoginId(facultyId);
   if (!faculty) return null;
 
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = days[now.getDay()];
+  const targetDay = day || getCurrentDay();
 
-  if (today === 'Sunday' || today === 'Saturday') {
-    return { isHoliday: true, day: today, classes: [] };
+  if (targetDay === 'Sunday' || targetDay === 'Saturday') {
+    return { isHoliday: true, day: targetDay, classes: [] };
   }
 
   const classes: any[] = [];
   for (const course of (faculty.courses || [])) {
     for (const slot of (course.schedule || [])) {
-      if (slot.startsWith(today)) {
-        const time = slot.replace(`${today}: `, '');
+      if (slot.startsWith(targetDay)) {
+        const time = slot.replace(`${targetDay}: `, '');
         classes.push({
           time,
           code: course.code,
@@ -118,35 +177,63 @@ export async function getFacultyScheduleToday(facultyId: string) {
   }
 
   classes.sort((a, b) => a.time.localeCompare(b.time));
-  return { isHoliday: false, day: today, classes };
+  return { isHoliday: false, day: targetDay, classes };
+}
+
+export async function getFacultyScheduleToday(facultyId: string) {
+  return getFacultyScheduleForDay(facultyId);
 }
 
 export async function getFacultyNextClass(facultyId: string) {
-  const schedule = await getFacultyScheduleToday(facultyId);
-  if (!schedule) return null;
-  if (schedule.isHoliday) return { isHoliday: true, day: schedule.day, message: `It's ${schedule.day}! No classes today, enjoy your weekend!` };
-  if (schedule.classes.length === 0) return { isHoliday: false, day: schedule.day, message: `No classes scheduled for today (${schedule.day}).` };
+  const faculty = await getFacultyByLoginId(facultyId);
+  if (!faculty) return null;
 
-  const now = new Date();
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`;
+  const today = getCurrentDay();
+  const currentTime = getCurrentTime();
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const todayIdx = dayOrder.indexOf(today);
 
-  const upcoming = schedule.classes.filter((c: any) => {
-    const startTime = c.time.split(' - ')[0];
-    return startTime >= currentTime;
-  });
+  const daysToCheck = todayIdx >= 0 ? dayOrder.slice(todayIdx) : dayOrder;
 
-  if (upcoming.length === 0) {
-    return { isHoliday: false, day: schedule.day, message: 'All your classes are done for today!', classes: schedule.classes };
+  for (const day of daysToCheck) {
+    const schedule = await getFacultyScheduleForDay(facultyId, day);
+    if (!schedule || schedule.isHoliday) continue;
+
+    for (const cls of schedule.classes) {
+      const startTime = cls.time.split(' - ')[0];
+      if (day === today && startTime < currentTime) continue;
+
+      const isToday = day === today;
+      const timeStr = isToday
+        ? `today at ${startTime.substring(0, 5)}`
+        : `${day} at ${startTime.substring(0, 5)}`;
+
+      return {
+        isHoliday: false,
+        day,
+        nextClass: cls,
+        message: `Your next class is ${cls.title} (${cls.code}) on ${timeStr} in ${cls.room} with ${cls.studentCount} students.`,
+      };
+    }
   }
 
-  const next = upcoming[0];
-  return {
-    isHoliday: false,
-    day: schedule.day,
-    nextClass: next,
-    remaining: upcoming.length,
-    message: `Your next class is ${next.title} (${next.code}) at ${next.time.split(' - ')[0]} in ${next.room} with ${next.studentCount} students. You have ${upcoming.length} class${upcoming.length > 1 ? 'es' : ''} remaining today.`,
-  };
+  // Weekend: look at next week
+  if (today === 'Sunday' || today === 'Saturday') {
+    for (const day of dayOrder) {
+      const schedule = await getFacultyScheduleForDay(facultyId, day);
+      if (!schedule || schedule.isHoliday || schedule.classes.length === 0) continue;
+      const cls = schedule.classes[0];
+      const startTime = cls.time.split(' - ')[0];
+      return {
+        isHoliday: false,
+        day,
+        nextClass: cls,
+        message: `Your next class is ${cls.title} (${cls.code}) on ${day} at ${startTime.substring(0, 5)} in ${cls.room} with ${cls.studentCount} students.`,
+      };
+    }
+  }
+
+  return { isHoliday: false, day: today, message: 'No upcoming classes found this week.' };
 }
 
 export async function getFacultyStudents(facultyId: string) {
@@ -179,18 +266,16 @@ export async function getFacultyStudents(facultyId: string) {
 
 // ─── Room Queries ───────────────────────────────────────────
 
-export async function getAvailableRooms() {
+export async function getAvailableRooms(specificDay?: string, specificTime?: string) {
   const database = await getDb();
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = days[now.getDay()];
+  const today = getCurrentDay();
+  const queryDay = specificDay || today;
+  const queryTime = specificTime || getCurrentTime();
 
-  if (today === 'Sunday' || today === 'Saturday') {
+  if (queryDay === 'Sunday' || queryDay === 'Saturday') {
     const allRooms = await database.collection('rooms').find({}).toArray();
-    return { isHoliday: true, day: today, availableRooms: allRooms.map((r: any) => r.roomId), message: `It's ${today}! All rooms are available.` };
+    return { isHoliday: true, day: queryDay, availableRooms: allRooms.map((r: any) => r.roomId), message: `${queryDay} has no classes! All rooms are available.` };
   }
-
-  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`;
 
   const allRooms = await database.collection('rooms').find({}).toArray();
   const available: string[] = [];
@@ -199,11 +284,11 @@ export async function getAvailableRooms() {
   for (const room of allRooms) {
     let isOccupied = false;
     for (const slot of (room.schedule || [])) {
-      if (slot.day === today) {
+      if (slot.day === queryDay) {
         const [start, end] = slot.time.split(' - ');
-        if (currentTime >= start && currentTime < end) {
+        if (queryTime >= start && queryTime < end) {
           isOccupied = true;
-          occupied.push({ room: room.roomId, course: slot.courseTitle, instructor: slot.instructor, until: end });
+          occupied.push({ room: room.roomId, course: slot.courseTitle, instructor: slot.instructor, time: slot.time });
           break;
         }
       }
@@ -211,17 +296,38 @@ export async function getAvailableRooms() {
     if (!isOccupied) available.push(room.roomId);
   }
 
-  return { isHoliday: false, day: today, time: currentTime, availableRooms: available, occupiedRooms: occupied };
+  return { isHoliday: false, day: queryDay, time: queryTime, availableRooms: available, occupiedRooms: occupied };
 }
 
 export async function getRoomStatus(roomId?: string) {
   const database = await getDb();
-  const now = new Date();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = days[now.getDay()];
+  const today = getCurrentDay();
 
-  const query = roomId ? { roomId } : {};
-  const rooms = await database.collection('rooms').find(query).toArray();
+  // Try exact match first, then normalized match
+  let queryFilter: any = {};
+  if (roomId) {
+    const normalized = normalizeRoomId(roomId);
+    // Try both the original and normalized forms
+    queryFilter = { $or: [{ roomId: roomId }, { roomId: normalized }] };
+  }
+
+  const rooms = await database.collection('rooms').find(queryFilter).toArray();
+
+  // If no exact match, try fuzzy match on the number part
+  if (rooms.length === 0 && roomId) {
+    const numMatch = roomId.match(/(\d+\w*)/);
+    if (numMatch) {
+      const allRooms = await database.collection('rooms').find({}).toArray();
+      const fuzzyMatches = allRooms.filter((r: any) => r.roomId.includes(numMatch[1]));
+      if (fuzzyMatches.length > 0) {
+        return fuzzyMatches.map((room: any) => {
+          const todaySchedule = (room.schedule || []).filter((s: any) => s.day === today);
+          todaySchedule.sort((a: any, b: any) => a.time.localeCompare(b.time));
+          return { roomId: room.roomId, building: room.building, todayClasses: todaySchedule };
+        });
+      }
+    }
+  }
 
   return rooms.map((room: any) => {
     const todaySchedule = (room.schedule || []).filter((s: any) => s.day === today);
