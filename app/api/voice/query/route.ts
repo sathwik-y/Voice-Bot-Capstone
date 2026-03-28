@@ -172,22 +172,25 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
         const timetableDay = understanding.entities?.day;
         if (timetableDay) {
           const timetableTime = understanding.entities?.time;
+          const queryLower = userQuery.toLowerCase();
+          const wantsStudents = queryLower.match(/\b(students?|who('s| is| are)?\s*(in|enrolled|taking|attending)|enrolled|roster|list\s*of\s*students)\b/);
           const data = await getClassesOnDay(timetableDay, timetableTime || undefined);
           if (data.classes.length === 0) {
             return timetableTime
-              ? `No classes scheduled on ${data.day} at ${timetableTime.substring(0, 5)}.`
-              : `No classes scheduled on ${data.day}.`;
+              ? `No classes at ${timetableTime.substring(0, 5)} on ${data.day}.`
+              : `No classes on ${data.day}.`;
           }
           const timeLabel = timetableTime ? ` at ${timetableTime.substring(0, 5)}` : '';
           const lines = data.classes.map((c: any) => {
-            const studentNames = c.students.length > 0
-              ? c.students.map((s: any) => `${s.name} (${s.rollNumber})`).join(', ')
-              : 'No enrolled students found';
-            return `${c.time.substring(0, 5)}-${c.time.split(' - ')[1]?.substring(0, 5)} | ${c.room} | ${c.courseTitle} (${c.courseCode}) | ${c.instructor} | Students: ${studentNames}`;
+            let line = `${c.time.substring(0, 5)} | ${c.room} | ${c.courseTitle} — ${c.instructor}`;
+            if (wantsStudents && c.students.length > 0) {
+              line += ` | Students: ${c.students.map((s: any) => s.name).join(', ')}`;
+            }
+            return line;
           });
-          return `Classes on ${data.day}${timeLabel} (${data.classes.length} total):\n${lines.join('\n')}`;
+          return `${data.classes.length} class${data.classes.length > 1 ? 'es' : ''} on ${data.day}${timeLabel}:\n${lines.join('\n')}`;
         }
-        return 'You can ask about specific days like "What classes are on Monday?" or "Classes at 9 AM on Tuesday". I\'ll show courses, rooms, instructors, and enrolled students.';
+        return 'Ask about a specific day, e.g. "What classes are on Monday?" or "Classes at 9 AM on Tuesday".';
       }
 
       case 'my_students': {
