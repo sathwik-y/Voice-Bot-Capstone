@@ -28,7 +28,43 @@ export function getDb(): Database.Database {
   const schema = readFileSync(schemaPath, 'utf-8');
   db.exec(schema);
 
+  // Run migrations for existing databases
+  migrateDatabase(db);
+
   return db;
+}
+
+/**
+ * Migrate existing database to new schema
+ */
+function migrateDatabase(database: Database.Database): void {
+  // Check if 'role' column exists in users table
+  const columns = database.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  const columnNames = columns.map(c => c.name);
+
+  if (!columnNames.includes('role')) {
+    database.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'");
+  }
+
+  if (!columnNames.includes('name')) {
+    database.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
+  }
+
+  if (!columnNames.includes('phoneNumber')) {
+    database.exec("ALTER TABLE users ADD COLUMN phoneNumber TEXT DEFAULT NULL");
+  }
+
+  // Check conversations table for new columns
+  const convColumns = database.prepare("PRAGMA table_info(conversations)").all() as { name: string }[];
+  const convColumnNames = convColumns.map(c => c.name);
+
+  if (!convColumnNames.includes('intent')) {
+    database.exec("ALTER TABLE conversations ADD COLUMN intent TEXT DEFAULT 'unknown'");
+  }
+
+  if (!convColumnNames.includes('confidence')) {
+    database.exec("ALTER TABLE conversations ADD COLUMN confidence REAL DEFAULT 0");
+  }
 }
 
 /**

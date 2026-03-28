@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.planning
+.claude
+*.md
+!README.md
+nul
+cloudflared.exe
+Review 1 Material
+Voice Based AI - Phase 2 Review.pdf

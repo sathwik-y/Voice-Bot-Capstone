@@ -39,3 +39,7 @@ next-env.d.ts
 /data/*.db-shm
 /data/*.db-wal
 
+# misc binaries
+cloudflared.exe
+nul
+

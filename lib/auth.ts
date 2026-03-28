@@ -5,9 +5,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const SALT_ROUNDS = 10;
 const TOKEN_EXPIRY = '7d';
 
+export type UserRole = 'student' | 'faculty' | 'admin';
+
 export interface TokenPayload {
   userId: number;
   rollNumber: string;
+  role: UserRole;
+  name: string;
+  phoneNumber?: string;
 }
 
 /**

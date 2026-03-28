@@ -27,12 +27,17 @@ export default function Login() {
       const data = await res.json();
 
       if (res.ok) {
-        router.push('/dashboard');
+        const role = data.user?.role || 'student';
+        switch (role) {
+          case 'admin': router.push('/admin'); break;
+          case 'faculty': router.push('/faculty'); break;
+          default: router.push('/dashboard');
+        }
       } else {
         setError(data.error || 'Login failed');
       }
     } catch (err) {
-      setError('Network error');
+      setError('Network error - please try again');
     } finally {
       setLoading(false);
     }
@@ -41,49 +46,89 @@ export default function Login() {
   return (
     <div style={{
       display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
       minHeight: '100vh',
-      padding: '1rem'
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '1rem',
     }}>
-      <h1 style={{ marginBottom: '2rem', fontSize: '2rem' }}>Login</h1>
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+          <div style={{
+            width: 60, height: 60, borderRadius: '50%',
+            background: 'var(--gradient-primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 1.25rem', fontSize: '1.75rem',
+          }}>
+            🎓
+          </div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+            Welcome Back
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            GITAM Voice Academic Assistant
+          </p>
+        </div>
 
-      <form onSubmit={handleSubmit} style={{
-        width: '100%',
-        maxWidth: '400px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem'
-      }}>
-        <input
-          type="text"
-          placeholder="Roll Number"
-          value={rollNumber}
-          onChange={(e) => setRollNumber(e.target.value)}
-          required
-          autoComplete="username"
-        />
+        {/* Login Form */}
+        <div className="card" style={{ padding: '2rem' }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 500 }}>
+                Roll Number / ID
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. VU22CSEN0101112"
+                value={rollNumber}
+                onChange={(e) => setRollNumber(e.target.value)}
+                required
+                autoComplete="username"
+              />
+            </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete="current-password"
-        />
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 500 }}>
+                Password
+              </label>
+              <input
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
 
-        {error && <p style={{ color: '#ff4444' }}>{error}</p>}
+            {error && (
+              <div style={{
+                padding: '0.75rem',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--accent-red)',
+                fontSize: '0.85rem',
+              }}>
+                {error}
+              </div>
+            )}
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'Logging in...' : 'Login'}
-        </button>
-      </form>
+            <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', padding: '0.85rem' }}>
+              {loading ? (
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <span className="spinner" /> Signing in...
+                </span>
+              ) : 'Sign In'}
+            </button>
+          </form>
+        </div>
 
-      <p style={{ marginTop: '1.5rem' }}>
-        Don't have an account? <Link href="/register">Register</Link>
-      </p>
+        <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          Don&apos;t have an account?{' '}
+          <Link href="/register" style={{ fontWeight: 600 }}>Create Account</Link>
+        </p>
+      </div>
     </div>
   );
 }

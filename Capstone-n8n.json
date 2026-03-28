@@ -1,36 +1,39 @@
 {
-  "name": "Capstone Voice Assistant",
+  "name": "Capstone",
   "nodes": [
     {
       "parameters": {
+        "httpMethod": "POST",
         "path": "capstone-voice",
+        "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        240,
-        300
+        -400,
+        -1376
       ],
-      "id": "webhook-node",
-      "name": "Webhook",
+      "id": "afbc08d8-fbc7-41ec-a0b3-5618d1fb1264",
+      "name": "Webhook1",
       "webhookId": "6d1c74d5-7a85-478f-80ef-93f4a0bf7d7a"
     },
     {
       "parameters": {
-        "operation": "find",
         "collection": "student",
-        "query": "={{ { \"rollNumber\": $json.rollNumber } }}",
-        "limit": 1
+        "options": {
+          "limit": 1
+        },
+        "query": "={ \"rollNumber\": \"{{ $json.body.rollNumber }}\" }"
       },
       "type": "n8n-nodes-base.mongoDb",
-      "typeVersion": 1.1,
+      "typeVersion": 1.2,
       "position": [
-        460,
-        300
+        -192,
+        -1376
       ],
-      "id": "mongodb-query",
-      "name": "Get Student Data",
+      "id": "50f196f0-4740-4994-a660-519ef2bd0812",
+      "name": "Get Student data",
       "credentials": {
         "mongoDb": {
           "id": "YvVNXbuZ8hlkQ0U7",
@@ -40,109 +43,161 @@
     },
     {
       "parameters": {
-        "model": "gemini-2.0-flash-exp",
-        "options": {
-          "temperature": 0.3
-        }
+        "promptType": "define",
+        "text": "={{$json.prompt}}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        432,
+        -1376
+      ],
+      "id": "ca290d82-099b-4e60-8558-47216d70934b",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-lite",
+        "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1.1,
+      "typeVersion": 1,
       "position": [
-        900,
-        460
+        352,
+        -1168
       ],
-      "id": "gemini-model",
-      "name": "Gemini Model",
+      "id": "47323093-5b3c-496d-b74a-44801a2920c1",
+      "name": "Google Gemini Chat Model1",
       "credentials": {
         "googlePalmApi": {
-          "id": "MA9fF508qc6e4INP",
-          "name": "Google Gemini(PaLM) Api account"
+          "id": "ak1rxyQ68pmbZj7X",
+          "name": "API key 4"
         }
       }
     },
     {
       "parameters": {
-        "promptType": "define",
-        "text": "={{ \"You are an academic assistant. Answer this student's question based ONLY on their data below.\\n\\nStudent Data:\\n\" + JSON.stringify($json, null, 2) + \"\\n\\nStudent Question: \" + $('Webhook').item.json.query + \"\\n\\nRULES:\\n1. Answer in 1-2 short sentences suitable for voice output.\\n2. NEVER make up information. Only use the data provided above.\\n3. If data is missing, say 'I don't have that information in your records.'\\n4. Be specific and accurate.\\n5. Don't mention JSON or technical terms in your response.\" }}",
+        "respondWith": "json",
+        "responseBody": "={\n  \"output\": \"{{ $json.text }}\"\n}",
         "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.chainLlm",
-      "typeVersion": 1.5,
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
       "position": [
-        680,
-        300
+        784,
+        -1376
       ],
-      "id": "llm-chain",
-      "name": "AI Response Generator"
+      "id": "dfe59a6e-1c8c-4d9b-a1f1-cebb9a669603",
+      "name": "Respond to Webhook"
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { \"output\": $json.text, \"query\": $('Webhook').item.json.query, \"rollNumber\": $('Webhook').item.json.rollNumber } }}"
+        "jsCode": "// Get data from webhook\n  const webhookData = $('Webhook1').first().json.body;\n  const query = webhookData.query.toLowerCase();\n  const intent = webhookData.intent || 'unknown'; // ← USE GEMINI'S INTENT!\n  const studentData = $input.first().json;\n\n  // Helper: find latest semester with grades\n  const semesters = studentData.grades?.semesters ?? {};\n  const latestSemesterKey = Object.keys(semesters).sort((a, b) => Number(b) - Number(a))[0];\n  const latestSemester = semesters[latestSemesterKey] ?? {};\n\n  // Base response\n  let relevantData = {\n    rollNumber: studentData.rollNumber,\n    name: studentData.name\n  };\n\n  // Intent handling (using Gemini's intent from frontend)\n  switch (intent) {\n    case 'cgpa':\n    case 'grades':  // Support both names\n      relevantData.cgpa = latestSemester.cgpa ?? null;\n      relevantData.sgpa = latestSemester.sgpa ?? null;\n      relevantData.grades = latestSemester.endGrades ?? [];\n      break;\n\n    case 'attendance':\n      relevantData.attendance = studentData.attendance ?? [];\n      break;\n\n    case 'faculty':\n      relevantData.faculty = studentData.faculty ?? {};\n      break;\n\n    case 'courses':\n    case 'course':\n    case 'course_details':\n      relevantData.courses =\n        studentData.currentSemesterCourses ??\n        studentData.registeredCourses?.map(c => ({\n          code: c.code,\n          name: c.title\n        })) ??\n        studentData.attendance?.map(a => ({\n          code: a.code,\n          name: a.name\n        })) ??\n        [];\n      break;\n\n    case 'general_status':  // ← THE NEW ONE!\n      relevantData.cgpa = latestSemester.cgpa ?? null;\n      relevantData.sgpa = latestSemester.sgpa ?? null;\n      relevantData.attendance = studentData.attendance ?? [];\n      relevantData.courses =\n        studentData.currentSemesterCourses ??\n        studentData.attendance?.map(a => ({\n          code: a.code,\n          name: a.name\n        })) ??\n        [];\n      break;\n\n    default:  // unknown - give everything\n      relevantData = {\n        rollNumber: studentData.rollNumber,\n        name: studentData.name,\n        cgpa: latestSemester.cgpa ?? null,\n        attendance: studentData.attendance ?? [],\n        courses:\n          studentData.currentSemesterCourses ??\n          studentData.attendance?.map(a => ({\n            code: a.code,\n            name: a.name\n          })) ??\n          []\n      };\n  }\n\n  // Pass intent to LLM\n  relevantData._intent = intent;\n\n  // REQUIRED: return array\n  return [{ json: relevantData }];"
       },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        1120,
-        300
+        16,
+        -1376
       ],
-      "id": "respond-webhook",
-      "name": "Send Response"
+      "id": "40beb971-ce2c-42dc-8e14-f72e6badce14",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const studentData = $json;\nconst webhook = $('Webhook1').item.json.body;\n\nconst query = webhook.query;\nconst lastContext = webhook.lastContext;\nconst intent = studentData._intent || 'unknown';\n\nlet contextHint = '';\nlet responseStyle = 'one short, clear sentence';\n\nif (intent === 'general_status') {\n  contextHint = `\nIMPORTANT:\nUser wants an OVERALL SUMMARY.\nProvide CGPA, average attendance, and number of courses.\nKeep to 2–3 sentences max.\n`;\n  responseStyle = '2–3 short sentences';\n}\n\nconst prevContext = lastContext\n  ? `Previous question: ${lastContext.lastQuery}\nPrevious answer: ${lastContext.lastResponse}`\n  : 'None';\n\nconst prompt = `\nYou are an academic assistant.\n\nYou will receive structured student data.\nAnswer the question using ONLY that data.\n\nStudent Data:\n${JSON.stringify(studentData, null, 2)}\n\nQuestion: ${query}\n\nPrevious Context:\n${prevContext}\n\n${contextHint}\n\nRules:\n- If data exists, answer directly.\n- If missing, say: \"I don't have that information.\"\n- Answer in ${responseStyle}.\n- Do not explain your reasoning.\n`;\n\nreturn {\n  prompt\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -1376
+      ],
+      "id": "787190b9-3ba1-4e04-84df-993f13a68d5a",
+      "name": "Prompt Generator"
     }
   ],
+  "pinData": {},
   "connections": {
-    "Webhook": {
+    "Webhook1": {
       "main": [
         [
           {
-            "node": "Get Student Data",
+            "node": "Get Student data",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Get Student Data": {
+    "Get Student data": {
       "main": [
         [
           {
-            "node": "AI Response Generator",
+            "node": "Code",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "AI Response Generator": {
-      "main": [
-        [
-          {
-            "node": "Send Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gemini Model": {
+    "Google Gemini Chat Model1": {
       "ai_languageModel": [
         [
           {
-            "node": "AI Response Generator",
+            "node": "Basic LLM Chain",
             "type": "ai_languageModel",
             "index": 0
           }
         ]
       ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Prompt Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt Generator": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "pinData": {},
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
   },
-  "staticData": null,
-  "tags": [],
-  "triggerCount": 0,
-  "updatedAt": "2025-01-17T00:00:00.000Z",
-  "versionId": "new-version"
+  "versionId": "9ccd2c15-55b1-44e5-9d83-14b07fe1c65b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3006a5d6772217f5ebf10e103499012896c18b16962721572449c979edef3060"
+  },
+  "id": "7XBFHHJ0cIkX94Hw",
+  "tags": []
 }

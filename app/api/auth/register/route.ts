@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hashPassword } from '@/lib/auth';
+import { hashPassword, UserRole } from '@/lib/auth';
 import { query, run } from '@/lib/db';
 
 interface User {
@@ -10,7 +10,7 @@ interface User {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { rollNumber, password } = body;
+    const { rollNumber, password, name, role, phoneNumber } = body;
 
     // Validation
     if (!rollNumber || !password) {
@@ -37,6 +37,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Role validation
+    const validRoles: UserRole[] = ['student', 'faculty', 'admin'];
+    const userRole: UserRole = validRoles.includes(role) ? role : 'student';
+
     // Check if user already exists
     const existingUsers = query<User>(
       'SELECT id, rollNumber FROM users WHERE rollNumber = ?',
@@ -53,14 +57,14 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Insert user
+    // Insert user with role, name, and phone number
     run(
-      'INSERT INTO users (rollNumber, password) VALUES (?, ?)',
-      [rollNumber, hashedPassword]
+      'INSERT INTO users (rollNumber, password, name, role, phoneNumber) VALUES (?, ?, ?, ?, ?)',
+      [rollNumber, hashedPassword, name || '', userRole, phoneNumber || null]
     );
 
     return NextResponse.json(
-      { message: 'User created' },
+      { message: 'User created', role: userRole },
       { status: 201 }
     );
   } catch (error) {

@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # Voice Academic Assistant (Next.js)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/capstone-voice}
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - RINGG_API_KEY=${RINGG_API_KEY:-}
+    volumes:
+      - app-data:/app/data
+    restart: unless-stopped
+    depends_on:
+      - n8n
+
+  # n8n Workflow Engine
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin}
+      - WEBHOOK_URL=http://n8n:5678/
+    volumes:
+      - n8n-data:/home/node/.n8n
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  n8n-data:

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { comparePassword, signToken } from '@/lib/auth';
+import { comparePassword, signToken, UserRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 
 interface User {
   id: number;
   password: string;
   rollNumber: string;
+  name: string;
+  role: UserRole;
+  phoneNumber: string | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     // Query user by rollNumber
     const users = query<User>(
-      'SELECT id, password, rollNumber FROM users WHERE rollNumber = ?',
+      'SELECT id, password, rollNumber, name, role, phoneNumber FROM users WHERE rollNumber = ?',
       [rollNumber]
     );
 
@@ -45,10 +48,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Sign JWT token
+    // Sign JWT token with role
     const token = signToken({
       userId: user.id,
       rollNumber: user.rollNumber,
+      role: user.role || 'student',
+      name: user.name || '',
+      phoneNumber: user.phoneNumber || undefined,
     });
 
     // Create response with cookie
@@ -57,6 +63,9 @@ export async function POST(request: NextRequest) {
         message: 'Logged in',
         user: {
           rollNumber: user.rollNumber,
+          name: user.name || '',
+          role: user.role || 'student',
+          phoneNumber: user.phoneNumber || null,
         },
       },
       { status: 200 }
