@@ -299,6 +299,69 @@ export async function getAvailableRooms(specificDay?: string, specificTime?: str
   return { isHoliday: false, day: queryDay, time: queryTime, availableRooms: available, occupiedRooms: occupied };
 }
 
+/** Get students enrolled in courses taught in a specific room */
+export async function getStudentsInRoom(roomId: string) {
+  const database = await getDb();
+  const today = getCurrentDay();
+  const normalized = normalizeRoomId(roomId);
+
+  const rooms = await database.collection('rooms').find({
+    $or: [{ roomId }, { roomId: normalized }]
+  }).toArray();
+
+  if (rooms.length === 0) {
+    // Fuzzy match
+    const numMatch = roomId.match(/(\d+\w*)/);
+    if (numMatch) {
+      const all = await database.collection('rooms').find({}).toArray();
+      const matches = all.filter((r: any) => r.roomId.includes(numMatch[1]));
+      if (matches.length > 0) rooms.push(...matches);
+    }
+  }
+  if (rooms.length === 0) return null;
+
+  const room = rooms[0];
+  const todaySlots = (room.schedule || []).filter((s: any) => s.day === today);
+  const courseCodes = [...new Set(todaySlots.map((s: any) => s.courseCode))];
+
+  const facultyDocs = await database.collection('faculty').find({
+    'courses.code': { $in: courseCodes }
+  }).toArray();
+
+  const courseRolls: Record<string, string[]> = {};
+  for (const fac of facultyDocs) {
+    for (const course of (fac.courses || [])) {
+      if (courseCodes.includes(course.code) && course.enrolledStudents?.length) {
+        if (!courseRolls[course.code]) courseRolls[course.code] = [];
+        for (const r of course.enrolledStudents) {
+          if (!courseRolls[course.code].includes(r)) courseRolls[course.code].push(r);
+        }
+      }
+    }
+  }
+
+  const allRolls = [...new Set(Object.values(courseRolls).flat())];
+  const studentDocs = allRolls.length > 0
+    ? await database.collection('student').find(
+        { rollNumber: { $in: allRolls } },
+        { projection: { rollNumber: 1, name: 1 } }
+      ).toArray()
+    : [];
+  const rollToName: Record<string, string> = {};
+  for (const s of studentDocs) rollToName[s.rollNumber] = s.name;
+
+  return {
+    roomId: room.roomId,
+    classes: todaySlots.map((s: any) => ({
+      time: s.time,
+      courseCode: s.courseCode,
+      courseTitle: s.courseTitle,
+      instructor: s.instructor,
+      students: (courseRolls[s.courseCode] || []).map(r => ({ rollNumber: r, name: rollToName[r] || r })),
+    })),
+  };
+}
+
 export async function getRoomStatus(roomId?: string) {
   const database = await getDb();
   const today = getCurrentDay();

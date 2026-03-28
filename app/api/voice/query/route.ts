@@ -5,7 +5,7 @@ import { understandQuery, QueryIntent, generateAcademicResponse } from '@/lib/ge
 import {
   getStudentNextClass, getStudentScheduleToday,
   getFacultyNextClass, getFacultyScheduleToday, getFacultyStudents, getFacultyByLoginId,
-  getAvailableRooms, getRoomStatus, normalizeRoomId,
+  getAvailableRooms, getRoomStatus, getStudentsInRoom, normalizeRoomId,
   getStudentByRoll, getClassesOnDay,
 } from '@/lib/mongodb';
 
@@ -157,12 +157,26 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
 
       case 'room_status': {
         const roomId = understanding.entities?.roomId;
+        const queryLower = userQuery.toLowerCase();
+        const wantsStudents = !!queryLower.match(/\b(students?|who('s| is| are)?\s*(in|enrolled|taking|attending)|enrolled|roster|get\s*me.*student)\b/);
+
+        if (roomId && wantsStudents) {
+          const data = await getStudentsInRoom(roomId);
+          if (!data) return `Room ${roomId} not found.`;
+          if (data.classes.length === 0) return `${data.roomId} has no classes today.`;
+          const lines = data.classes.map((c: any) => {
+            const names = c.students.map((s: any) => s.name).join(', ');
+            return `${c.courseTitle} (${c.time.substring(0, 5)}) — ${names || 'No students found'}`;
+          });
+          return `Students in ${data.roomId}:\n${lines.join('\n')}`;
+        }
+
         const statuses = await getRoomStatus(roomId || undefined);
         if (statuses.length === 0) return roomId ? `Room ${roomId} not found.` : 'No room data available.';
         if (roomId) {
           const room = statuses[0];
-          if (room.todayClasses.length === 0) return `${room.roomId} has no classes scheduled today — it's free all day!`;
-          const classes = room.todayClasses.map((c: any) => `${c.time} - ${c.courseTitle} (${c.instructor})`).join('\n');
+          if (room.todayClasses.length === 0) return `${room.roomId} has no classes today — it's free all day!`;
+          const classes = room.todayClasses.map((c: any) => `${c.time.substring(0, 5)} — ${c.courseTitle} (${c.instructor})`).join('\n');
           return `${room.roomId} today:\n${classes}`;
         }
         return `Found ${statuses.length} rooms. Ask about a specific room like "What's in ICT 519?"`;
@@ -205,7 +219,18 @@ async function handleQuery(understanding: any, payload: any, userQuery: string, 
 
     // ── Help / unknown intent ──
     if (intent === 'unknown') {
-      // If there's a student roll number, try to look up their data anyway
+      // If there's a room and asking about students, handle it
+      if (understanding.entities?.roomId && userQuery.toLowerCase().match(/\b(students?|who('s| is| are)?\s*(in|enrolled|taking)|get\s*me.*student)\b/)) {
+        const data = await getStudentsInRoom(understanding.entities.roomId);
+        if (data && data.classes.length > 0) {
+          const lines = data.classes.map((c: any) => {
+            const names = c.students.map((s: any) => s.name).join(', ');
+            return `${c.courseTitle} (${c.time.substring(0, 5)}) — ${names || 'No students found'}`;
+          });
+          return `Students in ${data.roomId}:\n${lines.join('\n')}`;
+        }
+      }
+      // If there's a student roll number, try to look up their data
       if (understanding.entities?.studentRoll) {
         if (role === 'faculty' || role === 'admin') {
           return handleStudentLookup({ ...understanding, intent: 'general_status' }, understanding.entities.studentRoll, userQuery, contextMessages);
